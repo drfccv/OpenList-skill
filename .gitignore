@@ -12,6 +12,7 @@ __pycache__/
 *.tmp
 *.temp
 *.log
+.github/
 
 # IDE
 .vscode/

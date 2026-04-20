@@ -1,122 +1,130 @@
 ---
-name: openlist
-description: OpenList / AList 文件管理技能。通过 OpenList 实例进行文件浏览、上传、下载、改名、移动、复制、删除、搜索等操作。触发场景：用户提到 OpenList、AList、云盘管理、文件同步、需要浏览远程存储文件等。
+name: openlist-skill
+description: OpenList / AList 文件管理技能。用于浏览目录、搜索文件、获取直链、上传、改名、移动、复制、删除、分享和索引维护。适用于用户提到 OpenList、AList、网盘管理、文件同步或需要操作远程存储内容的场景。
 ---
 
 # OpenList 文件管理
 
-OpenList（AList 社区分支）HTTP API 封装，通过 Python 脚本调用。
+通过 `scripts/openlist.py` 调用 OpenList（AList 社区分支）HTTP API。以脚本实现为准，`references/api.md` 只作接口参考，不作为执行规则。
 
-## 前置配置
+## 使用原则
 
-使用前需要以下信息之一：
-1. OpenList 实例地址 + 用户名/密码（自动登录获取 token）
-2. OpenList 实例地址 + 已有 token
+1. 先发现，再修改。只读操作优先使用 `list`、`get`、`search`，写操作前先确认目标路径存在。
+2. 不要臆造参数。只使用脚本里真实支持的命令和参数，不要补不存在的选项，也不要把参考文档当成脚本能力。
+3. 避免破坏性尝试。`remove`、`rename`、`move`、`copy`、`index-build` 这类操作必须基于明确路径；当目标不明确时先列目录或获取文件信息。
+4. 搜索失败时不要立刻重建索引。先换关键词，再 `list` 定位，最后才考虑 `index-update` 或 `index-build`。
+5. 自动化场景优先输出 JSON。需要机器读取结果时使用 `--json`，仅在人工浏览时再用默认格式。
 
-配置自动存于脚本同级目录的 `config.json`（即 `scripts/../config.json`）。无需手动创建，首次使用时自动生成。也可通过 `--url` 和 `--token` 参数直接传入，跳过配置文件。
+## 配置
+
+脚本会从 `config.json` 读取配置，路径是 `scripts/../config.json`。支持两种方式：
+
+1. OpenList 实例地址 + 用户名 / 密码，先 `login` 再保存 token。
+2. OpenList 实例地址 + 现成 token，直接通过 `--token` 传入或写入配置。
+
+如果参数中给了 `--url` 或 `--token`，优先使用参数值，不依赖配置文件。
 
 ## 命令速查
 
-```bash
-python scripts/openlist.py <command> [options]
-```
+运行方式：`python scripts/openlist.py <command> [options]`
 
-| 命令 | 功能 | 必需参数 |
+### 基础命令
+
+| 命令 | 作用 | 必需参数 |
 |------|------|----------|
-| `login` | 登录获取 token | `--url --username --password` |
-| `list` | 列出目录 | `--path` |
-| `get` | 获取文件信息 | `--path` |
+| `login` | 登录并保存 token | `--url --username --password` |
+| `list` | 列出目录内容 | `--path` |
+| `get` | 获取文件或目录信息 | `--path` |
 | `search` | 搜索文件 | `--keyword` |
-| `mkdir` | 新建文件夹 | `--path` |
-| `rename` | 重命名 | `--path --new-name` |
-| `move` | 移动文件 | `--path --dst` |
-| `copy` | 复制文件 | `--path --dst` |
-| `remove` | 删除文件 | `--names` |
-| `link` | 获取直链 | `--path` |
+| `mkdir` | 新建目录 | `--path` |
+| `rename` | 重命名文件或目录 | `--path --new-name` |
+| `move` | 移动文件或目录 | `--path --dst` |
+| `copy` | 复制文件或目录 | `--path --dst` |
+| `remove` | 删除文件或目录 | `--names` |
+| `link` | 获取下载直链 | `--path` |
 | `upload` | 上传文件 | `--path --file` |
 | `batch-rename` | 批量重命名 | `--src-dir --rename-pairs` |
 | `regex-rename` | 正则重命名 | `--src-dir --src-regex --dst-regex` |
 
-### 分享管理命令
+### 分享命令
 
-| 命令 | 功能 | 必需参数 |
+| 命令 | 作用 | 必需参数 |
 |------|------|----------|
 | `share-list` | 列出分享 | 无 |
-| `share-create` | 创建分享 | `--paths` |
-| `share-get` | 获取分享信息 | `--ids` |
+| `share-create` | 创建分享 | `--files` |
+| `share-get` | 获取分享信息 | `--id` |
 | `share-update` | 更新分享 | `--id` |
-| `share-delete` | 删除分享 | `--ids` |
+| `share-delete` | 删除分享 | `--id` |
 
-### 索引管理命令
+### 索引命令
 
-| 命令 | 功能 |
+| 命令 | 作用 |
 |------|------|
-| `index-build` | 构建搜索索引（慎用，耗时长） |
-| `index-update` | 更新索引 `--paths` |
-| `index-clear` | 清除索引 |
 | `index-progress` | 查看索引进度 |
+| `index-update` | 增量更新索引 |
+| `index-clear` | 清除索引 |
+| `index-build` | 全量重建索引，最后手段 |
 
-**⚠️ 索引操作原则：**
-- `index-build` 重建全部索引，耗时且资源密集，**仅在首次配置或索引损坏时使用**
-- 搜索无结果时，**优先尝试**：
-  1. 更换关键词（模糊匹配、部分文件名）
-  2. 用 `list` 浏览目录定位
-  3. 用 `index-update --paths "/目标目录"` 增量更新
-- **避免自动触发 `index-build`**
+## 决策流程
 
-## 全局参数
+### 目录浏览
 
-- `--url <url>` — 覆盖配置中的实例地址
-- `--token <token>` — 覆盖配置中的 token
-- `--json` — 输出纯 JSON
-- `--quiet` — 仅输出核心数据
+1. 要看目录内容，先用 `list --path <dir> --json`。
+2. 要确认单个对象是否存在或查看属性，用 `get --path <path>`。
+3. 目录不明确时，先从父目录开始列，再逐层定位。
 
-## 使用示例
+### 搜索
+
+1. 先用 `search --path <root> --keyword <keyword>`。
+2. 如果结果为空或明显不对，换更短、更模糊的关键词再试。
+3. 再不行就用 `list` 逐级查找。
+4. 只有在确认某个目录确实需要补索引时，才用 `index-update --paths <dir>`。
+5. 只有索引损坏、首次配置或明确要求全量重建时，才用 `index-build`。
+
+### 写操作
+
+1. `rename`、`move`、`copy`、`remove` 前先确认完整路径。
+2. 对于删除，必须确认是精确目标，不要用模糊名称代替完整路径。
+3. 上传前确认目标路径是目录还是带文件名的完整目标路径。
+
+## 关键参数说明
+
+- `list` 支持 `--path`、`--page`、`--per-page`、`--refresh`。
+- `search` 支持 `--path`、`--keyword`、`--page`、`--per-page`、`--max-depth`、`--no-api`。
+- `upload` 支持 `--replace` 和 `--async-upload`。
+- `remove` 的 `--names` 是逗号分隔的完整路径列表。
+- `share-create` 使用 `--files`，不是 `--paths`。
+- `share-get`、`share-update`、`share-delete` 统一使用 `--id`。
+- `index-build` 支持 `--async`。
+- `--json` 让输出保持机器可解析，`--quiet` 只保留核心结果。
+
+## 推荐示例
 
 ```bash
-# 浏览文件
-python scripts/openlist.py list --path /
-python scripts/openlist.py list --path /Quark --page 1 --per-page 20
-
-# 下载文件（获取直链）
-python scripts/openlist.py link --path /Quark/video.mp4
-
-# 上传文件
+python scripts/openlist.py list --path / --json
+python scripts/openlist.py get --path /Quark
+python scripts/openlist.py search --path /Quark --keyword report --json
+python scripts/openlist.py link --path /Quark/video.mp4 --json
 python scripts/openlist.py upload --path /Backup/ --file ./report.pdf --replace
-
-# 批量重命名
-python scripts/openlist.py batch-rename --src-dir /Quark --rename-pairs "old1.txt:new1.txt,old2.txt:new2.txt"
-
-# 正则重命名：所有 .txt 改为 .md
-python scripts/openlist.py regex-rename --src-dir /Quark --src-regex "^(.*)\.txt$" --dst-regex "$1.md"
-
-# 创建分享
-python scripts/openlist.py share-create --paths "/Quark/report.pdf"
-# 返回: {"code": 200, "data": {"id": "xxx", "share_link": "http://.../@s/xxx"}}
-
-# 搜索无结果时的处理流程
-# 1. 先尝试换关键词
-python scripts/openlist.py search --path /Quark --keyword "report"
-python scripts/openlist.py search --path /Quark --keyword "pdf"
-# 2. 用 list 浏览目录定位
-python scripts/openlist.py list --path /Quark --page 1 --per-page 50
-# 3. 确认文件存在后增量更新索引（而非重建）
-python scripts/openlist.py index-update --paths "/Quark"
-# 4. 最后才考虑 index-build（仅当索引损坏或首次配置）
+python scripts/openlist.py share-create --files /Quark/report.pdf --json
+python scripts/openlist.py index-update --paths /Quark --json
+python scripts/openlist.py index-build --async --json
 ```
 
 ## 返回格式
 
-成功：
+成功示例：
+
 ```json
 {"code": 200, "message": "success", "data": {...}}
 ```
 
-失败：
+失败示例：
+
 ```json
 {"code": 400, "message": "error description", "data": null}
 ```
 
-## 详细 API 参考
+## 参考
 
-完整端点、请求体、响应格式见 `references/api.md`。
+完整端点、请求体和响应字段见 `references/api.md`。当你需要核对参数细节时再查它；如果脚本与文档不一致，以脚本当前实现为准。

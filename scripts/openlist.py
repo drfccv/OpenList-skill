@@ -204,7 +204,7 @@ def cmd_share_create(args):
     url, token = _resolve(args)
     # OpenList uses 'files' array, not 'path'
     files = [p.strip() for p in args.files.split(",")]
-    payload = {"files": files}
+    payload: dict[str, object] = {"files": files}
     if args.password:
         payload["pwd"] = args.password
     if args.expire_hours:

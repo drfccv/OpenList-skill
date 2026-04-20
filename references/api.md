@@ -2,6 +2,24 @@
 
 > OpenList API 与 AList v3 API 兼容。
 > 基础 URL: `<base_url>/api`
+>
+> 重要：本文件是接口参考，不是执行清单。自动化执行时优先以 `scripts/openlist.py` 已实现命令为准。
+
+## 脚本支持范围（避免误尝试）
+
+以下端点已由 `scripts/openlist.py` 封装，可直接通过脚本命令调用：
+
+- 认证：`/api/auth/login`
+- 文件：`/api/fs/list`、`/api/fs/get`、`/api/fs/search`、`/api/fs/mkdir`、`/api/fs/rename`、`/api/fs/move`、`/api/fs/copy`、`/api/fs/remove`、`/api/fs/link`、`/api/fs/form`、`/api/fs/batch_rename`、`/api/fs/regex_rename`
+- 分享：`/api/share/list`、`/api/share/get`、`/api/share/create`、`/api/share/update`、`/api/share/delete`
+- 索引：`/api/admin/index/build`、`/api/admin/index/update`、`/api/admin/index/clear`、`/api/admin/index/progress`
+
+以下端点是 API 能力，但当前脚本未封装，不应在技能执行流程中默认尝试：
+
+- `/api/fs/put`（流式上传）
+- `/api/fs/multipart`、`/api/fs/multipart_done`（分块上传）
+
+如果确实需要上述能力，应先修改脚本再执行。
 
 ## 认证
 
@@ -90,7 +108,8 @@ Response 200:
 ```
 
 > 搜索依赖搜索索引，首次使用需调用 `POST /api/admin/index/build` 构建索引。
-> 部分存储后端（如 139Yun / 中国移动云盘）不支持文件枚举，无法建立索引，搜索无法覆盖。
+> 在本项目中，脚本 `search` 提供了目录遍历回退逻辑，搜索失败时不应默认先执行 `index/build`。
+> 推荐顺序：换关键词 -> `list` 定位 -> `index/update`（必要时）-> 最后才 `index/build`。
 
 ### 新建目录
 ```
@@ -231,6 +250,8 @@ Response 200:
 > 可选请求头：`Overwrite: true`（覆盖已存在文件）、`As-Task: true`（异步上传）。
 
 ### 流式上传
+> 注意：当前 `scripts/openlist.py` 未封装该接口，仅供 API 参考。
+
 ```
 PUT /api/fs/put
 Authorization: <token>
@@ -244,6 +265,8 @@ Response 200:
 ```
 
 ### 分块上传（>5MB）
+> 注意：当前 `scripts/openlist.py` 未封装该接口，仅供 API 参考。
+
 ```
 # 1. 初始化
 POST /api/fs/multipart
